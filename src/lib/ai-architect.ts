@@ -46,7 +46,7 @@ export async function buildDeck(collection: ScryfallCard[], recipe: Recipe): Pro
     }
   }
   
-  const MINIMUM_POOL_SIZE = 22;
+  const MINIMUM_POOL_SIZE = 15;
   let analysisPool = cardPool;
 
   if (cardPool.length < MINIMUM_POOL_SIZE) {
