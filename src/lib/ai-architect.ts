@@ -13,15 +13,13 @@ type Recipe = {
   value: string[] | string;
 };
 
-// ... (TRIBAL_THEMES and MECHANICAL_THEME_KEYWORDS are unchanged)
 const TRIBAL_THEMES = [ 'angel', 'demon', 'dragon', 'elf', 'goblin', 'merfolk', 'sliver', 'soldier', 'spirit', 'vampire', 'wizard', 'zombie'];
 const MECHANICAL_THEME_KEYWORDS: Record<string, string[]> = { 'tokens': ['create', 'token'], 'lifegain': ['gain life'], 'graveyard': ['graveyard'], 'mill': ['mill', 'put the top'], 'burn': ['deal damage'], 'counters (+1/+1)': ['+1/+1 counter'], 'enchantments': ['enchantment'], 'artifacts': ['artifact'], 'ramp': ['add', 'mana pool'],};
 
-
 export async function buildDeck(collection: ScryfallCard[], recipe: Recipe): Promise<Deck> {
-  // ... (The filtering logic at the beginning remains the same)
   let cardPool: ScryfallCard[] = [];
   let deckContext = '';
+
   if (recipe.type === 'colors') {
     const selectedColors = recipe.value as string[];
     deckContext = `A casual, 60-card, ${selectedColors.join('/')} deck.`;
@@ -48,21 +46,21 @@ export async function buildDeck(collection: ScryfallCard[], recipe: Recipe): Pro
     }
   }
   
-  if (cardPool.length < 40) {
-    alert(`Could not find enough cards for "${recipe.value}" in your collection.`);
+  const MINIMUM_POOL_SIZE = 22;
+  let analysisPool = cardPool;
+
+  if (cardPool.length < MINIMUM_POOL_SIZE) {
+    alert(`Could not find enough cards for "${recipe.value}" in your collection. Found only ${cardPool.length} cards.`);
     return { creatures: [], spells: [], lands: [] };
   }
-
-  // ... (The Synergy Search logic remains the same)
-  let analysisPool = cardPool;
+  
   if (cardPool.length < 40) {
     const coreCardNames = cardPool.map(card => card.name);
-    deckContext = `I am building a "${recipe.value}" themed deck...`;
+    deckContext = `I am building a "${recipe.value}" themed deck. The core cards are: ${JSON.stringify(coreCardNames)}. Please find other cards from my entire collection with good synergy.`;
     analysisPool = collection.filter(card => !card.type_line.includes('Land'));
   }
 
-
-  let allCardScores: { name: string; score: any }[] = []; // Allow score to be 'any' initially
+  let allCardScores: { name: string; score: number }[] = [];
   const CHUNK_SIZE = 200;
 
   for (let i = 0; i < analysisPool.length; i += CHUNK_SIZE) {
@@ -84,17 +82,12 @@ export async function buildDeck(collection: ScryfallCard[], recipe: Recipe): Pro
     }
   }
   
-  console.log(`AI Architect: Successfully scored all chunks. First 5 scores received:`, allCardScores.slice(0, 5));
-
-  // THE FIX IS HERE: We robustly parse the score to a number.
   const scoreMap = new Map(
     allCardScores.map((item) => {
-      const score = parseInt(String(item.score), 10); // Force score to be a number
-      return [item.name, isNaN(score) ? 0 : score]; // Default to 0 if parsing fails
+      const score = parseInt(String(item.score), 10);
+      return [item.name, isNaN(score) ? 0 : score];
     })
   );
-
-  console.log(`AI Architect: Score map created successfully. Sorting cards...`);
   
   const creatures = analysisPool.filter(c => c.type_line?.includes('Creature')).sort((a, b) => (scoreMap.get(b.name) || 0) - (scoreMap.get(a.name) || 0));
   const spells = analysisPool.filter(c => !c.type_line?.includes('Creature') && !c.type_line?.includes('Land')).sort((a, b) => (scoreMap.get(b.name) || 0) - (scoreMap.get(a.name) || 0));
