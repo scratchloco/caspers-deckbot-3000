@@ -13,107 +13,107 @@ type Recipe = {
   value: string[] | string;
 };
 
-// --- A SMARTER AI: We now distinguish between theme types ---
-const TRIBAL_THEMES = [
-  'angels', 'demons', 'dragons', 'elves', 'goblins', 'merfolk', 'slivers', 
-  'soldiers', 'spirits', 'vampires', 'wizards', 'zombies'
-];
-// We will add more keywords to these as we test more themes
-const MECHANICAL_THEME_KEYWORDS: Record<string, string[]> = {
-  'tokens': ['create', 'token'],
-  'lifegain': ['gain life'],
-  'graveyard': ['graveyard'],
-  'mill': ['mill', 'put the top'],
-  'burn': ['deal damage'],
-  'counters (+1/+1)': ['+1/+1 counter'],
-  'enchantments': ['enchantment'],
-  'artifacts': ['artifact'],
-  'ramp': ['add', 'mana pool'],
-};
+// ... (TRIBAL_THEMES and MECHANICAL_THEME_KEYWORDS are unchanged)
+const TRIBAL_THEMES = [ 'angel', 'demon', 'dragon', 'elf', 'goblin', 'merfolk', 'sliver', 'soldier', 'spirit', 'vampire', 'wizard', 'zombie'];
+const MECHANICAL_THEME_KEYWORDS: Record<string, string[]> = { 'tokens': ['create', 'token'], 'lifegain': ['gain life'], 'graveyard': ['graveyard'], 'mill': ['mill', 'put the top'], 'burn': ['deal damage'], 'counters (+1/+1)': ['+1/+1 counter'], 'enchantments': ['enchantment'], 'artifacts': ['artifact'], 'ramp': ['add', 'mana pool'],};
 
 
-// --- Helper Functions ---
-const isRemoval = (card: ScryfallCard): boolean => {
-  const text = card.oracle_text || '';
-  return text.includes('destroy target') || text.includes('exile target');
-};
-const isCardDraw = (card: ScryfallCard): boolean => {
-  const text = card.oracle_text || '';
-  return text.includes('draw a card') || text.includes('draw two cards') || text.includes('draw cards');
-};
-
-
-// --- The Main AI Function ---
-export function buildDeck(collection: ScryfallCard[], recipe: Recipe): Deck {
-  console.log('AI Architect V2: Starting deck construction...');
-
-  let cardPool = collection;
-
-  // == STEP 1: A SMARTER Filter based on the recipe ==
+export async function buildDeck(collection: ScryfallCard[], recipe: Recipe): Promise<Deck> {
+  // ... (The filtering logic at the beginning remains the same)
+  let cardPool: ScryfallCard[] = [];
+  let deckContext = '';
   if (recipe.type === 'colors') {
-    const colors = recipe.value as string[];
-    cardPool = collection.filter(card => 
-      !card.type_line.includes('Land') && card.colors && card.colors.length > 0 && card.colors.every((c: string) => colors.includes(c))
-    );
+    const selectedColors = recipe.value as string[];
+    deckContext = `A casual, 60-card, ${selectedColors.join('/')} deck.`;
+    cardPool = collection.filter(card => {
+      if (card.type_line.includes('Land') || !card.color_identity || card.color_identity.length === 0) return false;
+      return card.color_identity.every(c => selectedColors.includes(c));
+    });
   } else if (recipe.type === 'theme') {
     const theme = (recipe.value as string).toLowerCase();
-    
-    // NEW LOGIC: Check if it's a tribal or mechanical theme
+    deckContext = `A casual, 60-card, "${theme}" themed deck.`;
     if (TRIBAL_THEMES.includes(theme)) {
-      // For tribes, we check the type line
-      console.log(`AI: Filtering for a TRIBAL theme: ${theme}`);
-      cardPool = collection.filter(card => 
-        card.type_line?.toLowerCase().includes(theme)
-      );
+      cardPool = collection.filter(card => {
+        const name = (card.name || '').toLowerCase();
+        const typeLine = (card.type_line || '').toLowerCase();
+        const oracleText = (card.oracle_text || '').toLowerCase();
+        return name.includes(theme) || typeLine.includes(theme) || oracleText.includes(theme);
+      });
     } else if (MECHANICAL_THEME_KEYWORDS[theme]) {
-      // For mechanics, we check the oracle text for ALL keywords
-      console.log(`AI: Filtering for a MECHANICAL theme: ${theme}`);
       const keywords = MECHANICAL_THEME_KEYWORDS[theme];
       cardPool = collection.filter(card => {
         const text = (card.oracle_text || '').toLowerCase();
         return keywords.every(keyword => text.includes(keyword));
       });
-    } else {
-      // Fallback for themes not in our lists (like 'Angels' or user-defined)
-      console.log(`AI: Filtering for a GENERAL theme: ${theme}`);
-      cardPool = collection.filter(card =>
-        card.type_line?.toLowerCase().includes(theme) || 
-        card.name?.toLowerCase().includes(theme) ||
-        (card.oracle_text || '').toLowerCase().includes(theme)
-      );
     }
   }
-  console.log(`AI Architect: Filtered to a pool of ${cardPool.length} cards.`);
-
-  // == STEP 2: Categorize the filtered card pool ==
-  const categorizedCards = {
-    creatures: cardPool.filter(c => c.type_line?.includes('Creature')),
-    removal: cardPool.filter(isRemoval),
-    cardDraw: cardPool.filter(isCardDraw),
-    spells: cardPool.filter(c => !c.type_line?.includes('Creature') && !c.type_line?.includes('Land')),
-  };
-
-  // == STEP 3: Define the Deck Blueprint ==
-  const blueprint = {
-    creatures: 22,
-    spells: 14,
-    lands: 24,
-  };
-
-  const finalDeck: Deck = { creatures: [], spells: [], lands: [] };
-
-  // == STEP 4: Fill the Deck Slots ==
-  finalDeck.creatures = categorizedCards.creatures.slice(0, blueprint.creatures);
-  const otherSpells = categorizedCards.spells.filter(c => !isRemoval(c) && !isCardDraw(c));
-  finalDeck.spells = [ ...categorizedCards.removal, ...categorizedCards.cardDraw, ...otherSpells ].slice(0, blueprint.spells);
   
-  // == STEP 5: Add Lands ==
-  const totalSpells = finalDeck.creatures.length + finalDeck.spells.length;
-  const landCount = 60 - totalSpells;
-  for (let i = 0; i < landCount; i++) {
-    finalDeck.lands.push({ id: `basic-land-${i}`, name: 'Basic Land (Placeholder)', type_line: 'Land' });
+  if (cardPool.length < 40) {
+    alert(`Could not find enough cards for "${recipe.value}" in your collection.`);
+    return { creatures: [], spells: [], lands: [] };
   }
 
-  console.log('AI Architect: Deck construction complete!');
+  // ... (The Synergy Search logic remains the same)
+  let analysisPool = cardPool;
+  if (cardPool.length < 40) {
+    const coreCardNames = cardPool.map(card => card.name);
+    deckContext = `I am building a "${recipe.value}" themed deck...`;
+    analysisPool = collection.filter(card => !card.type_line.includes('Land'));
+  }
+
+
+  let allCardScores: { name: string; score: any }[] = []; // Allow score to be 'any' initially
+  const CHUNK_SIZE = 200;
+
+  for (let i = 0; i < analysisPool.length; i += CHUNK_SIZE) {
+    const chunk = analysisPool.slice(i, i + CHUNK_SIZE);
+    try {
+      const response = await fetch('/api/score-cards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardNames: chunk.map(card => card.name), deckContext: deckContext }),
+      });
+      const scoredData = await response.json();
+      if (!response.ok) throw new Error(scoredData.error + ' Details: ' + (scoredData.details || 'No details provided.'));
+      if (!scoredData.card_scores) throw new Error("AI response missing 'card_scores' array.");
+      allCardScores.push(...scoredData.card_scores);
+    } catch (error) {
+      console.error("CRITICAL ERROR PROCESSING AI RESPONSE:", error);
+      alert("A critical error occurred while talking to the AI. Check console (F12) for details.");
+      return { creatures: [], spells: [], lands: [] };
+    }
+  }
+  
+  console.log(`AI Architect: Successfully scored all chunks. First 5 scores received:`, allCardScores.slice(0, 5));
+
+  // THE FIX IS HERE: We robustly parse the score to a number.
+  const scoreMap = new Map(
+    allCardScores.map((item) => {
+      const score = parseInt(String(item.score), 10); // Force score to be a number
+      return [item.name, isNaN(score) ? 0 : score]; // Default to 0 if parsing fails
+    })
+  );
+
+  console.log(`AI Architect: Score map created successfully. Sorting cards...`);
+  
+  const creatures = analysisPool.filter(c => c.type_line?.includes('Creature')).sort((a, b) => (scoreMap.get(b.name) || 0) - (scoreMap.get(a.name) || 0));
+  const spells = analysisPool.filter(c => !c.type_line?.includes('Creature') && !c.type_line?.includes('Land')).sort((a, b) => (scoreMap.get(b.name) || 0) - (scoreMap.get(a.name) || 0));
+
+  const blueprint = { creatures: 22, spells: 14, lands: 24 };
+  const finalDeck: Deck = { creatures: [], spells: [], lands: [] };
+  finalDeck.creatures = creatures.slice(0, blueprint.creatures);
+  finalDeck.spells = spells.slice(0, blueprint.spells);
+  
+  const totalSpells = finalDeck.creatures.length + finalDeck.spells.length;
+  if (totalSpells < 15) {
+      alert(`Could not build a reasonable deck for "${recipe.value}". Only found ${totalSpells} fitting cards.`);
+      return { creatures: [], spells: [], lands: [] };
+  }
+
+  const landCount = 60 - totalSpells;
+  for (let i = 0; i < landCount; i++) {
+    finalDeck.lands.push({ id: `basic-land-${i}`, name: 'Basic Land (Placeholder)', color_identity: [], type_line: 'Land' });
+  }
+
   return finalDeck;
 }
