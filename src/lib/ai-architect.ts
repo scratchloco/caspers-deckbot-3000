@@ -8,63 +8,66 @@ export type Deck = {
   lands: ScryfallCard[];
 };
 
-type Recipe = {
-  type: 'colors' | 'theme';
-  value: string[] | string;
+// Simplified the Recipe type. It's always the same shape now.
+export type Recipe = {
+  type: 'theme_and_colors';
+  value: { theme: string, colors: string[] };
 };
 
 const TRIBAL_THEMES = [ 'angel', 'demon', 'dragon', 'elf', 'goblin', 'merfolk', 'sliver', 'soldier', 'spirit', 'vampire', 'wizard', 'zombie'];
-const MECHANICAL_THEME_KEYWORDS: Record<string, string[]> = { 'tokens': ['create', 'token'], 'lifegain': ['gain life'], 'graveyard': ['graveyard'], 'mill': ['mill', 'put the top'], 'burn': ['deal damage'], 'counters (+1/+1)': ['+1/+1 counter'], 'enchantments': ['enchantment'], 'artifacts': ['artifact'], 'ramp': ['add', 'mana pool'],};
 
 export async function buildDeck(collection: ScryfallCard[], recipe: Recipe): Promise<Deck> {
-  let cardPool: ScryfallCard[] = [];
+  let cardPool = collection.filter(card => !card.type_line.includes('Land')); // Start with all non-land cards
   let deckContext = '';
+  
+  const { theme, colors } = recipe.value;
+  const lowerCaseTheme = theme.trim().toLowerCase();
 
-  if (recipe.type === 'colors') {
-    const selectedColors = recipe.value as string[];
-    deckContext = `A casual, 60-card, ${selectedColors.join('/')} deck.`;
-    cardPool = collection.filter(card => {
-      if (card.type_line.includes('Land') || !card.color_identity || card.color_identity.length === 0) return false;
-      return card.color_identity.every(c => selectedColors.includes(c));
-    });
-  } else if (recipe.type === 'theme') {
-    const theme = (recipe.value as string).toLowerCase();
-    deckContext = `A casual, 60-card, "${theme}" themed deck.`;
-    if (TRIBAL_THEMES.includes(theme)) {
-      cardPool = collection.filter(card => {
+  // --- NEW UNIFIED FILTERING LOGIC ---
+
+  // 1. Filter by theme IF a theme is provided
+  if (lowerCaseTheme) {
+    deckContext = `A casual, 60-card, "${theme}" themed deck`;
+    if (TRIBAL_THEMES.includes(lowerCaseTheme)) {
+        cardPool = cardPool.filter(card => {
         const name = (card.name || '').toLowerCase();
         const typeLine = (card.type_line || '').toLowerCase();
         const oracleText = (card.oracle_text || '').toLowerCase();
-        return name.includes(theme) || typeLine.includes(theme) || oracleText.includes(theme);
+        return name.includes(lowerCaseTheme) || typeLine.includes(lowerCaseTheme) || oracleText.includes(lowerCaseTheme);
       });
-    } else if (MECHANICAL_THEME_KEYWORDS[theme]) {
-      const keywords = MECHANICAL_THEME_KEYWORDS[theme];
-      cardPool = collection.filter(card => {
+    } else { // Handle mechanical themes or custom user themes
+        cardPool = cardPool.filter(card => {
         const text = (card.oracle_text || '').toLowerCase();
-        return keywords.every(keyword => text.includes(keyword));
+        return text.includes(lowerCaseTheme);
       });
     }
   }
-  
-  const MINIMUM_POOL_SIZE = 15;
-  let analysisPool = cardPool;
 
-  if (cardPool.length < MINIMUM_POOL_SIZE) {
-    alert(`Could not find enough cards for "${recipe.value}" in your collection. Found only ${cardPool.length} cards.`);
-    return { creatures: [], spells: [], lands: [] };
+  // 2. Filter by colors IF colors are provided
+  if (colors.length > 0) {
+    if (deckContext) {
+      deckContext += ` within the colors ${colors.join('/')}.`;
+    } else {
+      deckContext = `A casual, 60-card, ${colors.join('/')} deck.`;
+    }
+    
+    cardPool = cardPool.filter(card => {
+      if (!card.color_identity || card.color_identity.length === 0) return false;
+      return card.color_identity.every(c => colors.includes(c));
+    });
   }
   
-  if (cardPool.length < 40) {
-    const coreCardNames = cardPool.map(card => card.name);
-    deckContext = `I am building a "${recipe.value}" themed deck. The core cards are: ${JSON.stringify(coreCardNames)}. Please find other cards from my entire collection with good synergy.`;
-    analysisPool = collection.filter(card => !card.type_line.includes('Land'));
+  // The rest of the function remains the same...
+  const MINIMUM_POOL_SIZE = 22;
+  if (cardPool.length < MINIMUM_POOL_SIZE) {
+    alert(`Could not find enough cards for your recipe. Found only ${cardPool.length} cards. Please try a different combination.`);
+    return { creatures: [], spells: [], lands: [] };
   }
 
   let allCardScores: { name: string; score: number }[] = [];
   const CHUNK_SIZE = 200;
-
-  for (let i = 0; i < analysisPool.length; i += CHUNK_SIZE) {
-    const chunk = analysisPool.slice(i, i + CHUNK_SIZE);
+  for (let i = 0; i < cardPool.length; i += CHUNK_SIZE) {
+    const chunk = cardPool.slice(i, i + CHUNK_SIZE);
     try {
       const response = await fetch('/api/score-cards', {
         method: 'POST',
@@ -83,14 +86,14 @@ export async function buildDeck(collection: ScryfallCard[], recipe: Recipe): Pro
   }
   
   const scoreMap = new Map(
-    allCardScores.map((item) => {
+    allCardScores.map((item: { name: string; score: number }) => {
       const score = parseInt(String(item.score), 10);
       return [item.name, isNaN(score) ? 0 : score];
     })
   );
   
-  const creatures = analysisPool.filter(c => c.type_line?.includes('Creature')).sort((a, b) => (scoreMap.get(b.name) || 0) - (scoreMap.get(a.name) || 0));
-  const spells = analysisPool.filter(c => !c.type_line?.includes('Creature') && !c.type_line?.includes('Land')).sort((a, b) => (scoreMap.get(b.name) || 0) - (scoreMap.get(a.name) || 0));
+  const creatures = cardPool.filter(c => c.type_line?.includes('Creature')).sort((a, b) => (scoreMap.get(b.name) || 0) - (scoreMap.get(a.name) || 0));
+  const spells = cardPool.filter(c => !c.type_line?.includes('Creature') && !c.type_line?.includes('Land')).sort((a, b) => (scoreMap.get(b.name) || 0) - (scoreMap.get(a.name) || 0));
 
   const blueprint = { creatures: 22, spells: 14, lands: 24 };
   const finalDeck: Deck = { creatures: [], spells: [], lands: [] };
@@ -99,7 +102,7 @@ export async function buildDeck(collection: ScryfallCard[], recipe: Recipe): Pro
   
   const totalSpells = finalDeck.creatures.length + finalDeck.spells.length;
   if (totalSpells < 15) {
-      alert(`Could not build a reasonable deck for "${recipe.value}". Only found ${totalSpells} fitting cards.`);
+      alert(`Could not build a reasonable deck for your recipe. Only found ${totalSpells} fitting cards.`);
       return { creatures: [], spells: [], lands: [] };
   }
 
